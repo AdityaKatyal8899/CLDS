@@ -1,0 +1,32 @@
+[
+  {
+    "category": "salons",
+    "country": "US",
+    "city": "Chicago",
+    "limit": 30
+  },
+  {
+    "category": "wedding planners",
+    "country": "GB",
+    "city": "London",
+    "limit": 30
+  },
+  {
+    "category": "restaurants",
+    "country": "CA",
+    "city": "Toronto",
+    "limit": 30
+  },
+  {
+    "category": "photographers",
+    "country": "US",
+    "city": "New York",
+    "limit": 30
+  },
+  {
+    "category": "gift stores",
+    "country": "IN",
+    "city": "Delhi",
+    "limit": 30
+  }
+]

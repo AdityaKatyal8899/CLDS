@@ -1,0 +1,49 @@
+# Node.js & Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+ENV/
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Environment files & secrets (DO NOT COMMIT SECRETS)
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# Data & database exports
+data/clds.db
+data/clds.db-journal
+data/clds.db-wal
+data/clds.db-shm
+data/exports/*.csv
+data/exports/*.json
+!data/exports/.gitkeep
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+.vercel
