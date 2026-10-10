@@ -1,12 +1,14 @@
 /**
  * POST /api/search
  * Trigger Stage 1 Business Discovery job asynchronously via native TypeScript engine.
+ * Enforces 3 free searches for Trial users, unlimited for Administrator.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { SearchRequestSchema } from "@/lib/validation/schemas";
 import { JobRepository } from "@/lib/jobs/repository";
 import { EngineJobExecutor } from "@/lib/engine/job_executor";
+import { checkAndIncrementTrialSearch } from "@/lib/auth/users";
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,6 +23,36 @@ export async function POST(req: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    // Check user session
+    const sessionCookie = req.cookies.get("clds_session");
+    let userSession: any = null;
+    if (sessionCookie?.value) {
+      try {
+        userSession = JSON.parse(sessionCookie.value);
+      } catch {}
+    }
+
+    let searchesRemaining: number | null = null;
+
+    // Enforce 3-search limit for trial users
+    if (userSession && userSession.is_trial && userSession.email) {
+      const quotaCheck = await checkAndIncrementTrialSearch(userSession.email);
+      if (!quotaCheck.allowed) {
+        return NextResponse.json(
+          {
+            error: "Trial limit reached",
+            message:
+              quotaCheck.message ||
+              "You have used all 3 free trial searches! Contact Aditya on Peerlist to get full unlimited access.",
+            trial_limit_reached: true,
+            searches_remaining: 0,
+          },
+          { status: 403 }
+        );
+      }
+      searchesRemaining = quotaCheck.remaining;
     }
 
     const { category, country, city, state, provider, limit } = parsed.data;
@@ -62,6 +94,7 @@ export async function POST(req: NextRequest) {
         type: "discovery",
         created_at: job.created_at,
         message: "Discovery job queued successfully",
+        searches_remaining: searchesRemaining,
       },
       { status: 202 }
     );

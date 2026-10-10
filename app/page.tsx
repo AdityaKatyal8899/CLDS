@@ -150,6 +150,10 @@ interface UserSession {
   name: string;
   role: string;
   workspace: string;
+  is_trial?: boolean;
+  searches_limit?: number;
+  searches_used?: number;
+  searches_remaining?: number;
 }
 
 function Status({ value }: { value: string }) {
@@ -173,12 +177,14 @@ function Status({ value }: { value: string }) {
 }
 
 function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (user: UserSession) => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [tab, setTab] = useState<"trial" | "admin">("trial");
+  const [trialEmail, setTrialEmail] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleTrialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
@@ -187,7 +193,32 @@ function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (user: UserSession) =
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "login", email, password }),
+        body: JSON.stringify({ action: "trial_login", email: trialEmail }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        onLoginSuccess(data.user);
+      } else {
+        setError(data.error || "Failed to start trial session");
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to reach authentication service");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdminSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "login", email: adminEmail, password: adminPassword }),
       });
 
       const data = await res.json();
@@ -212,6 +243,69 @@ function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (user: UserSession) =
           <p>Client Lead Discovery & Website Intelligence System</p>
         </div>
 
+        {/* Auth Mode Tabs */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "6px",
+            background: "#09090b",
+            padding: "4px",
+            borderRadius: "8px",
+            marginBottom: "20px",
+            border: "1px solid #27272a",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setTab("trial");
+              setError("");
+            }}
+            style={{
+              padding: "8px 10px",
+              borderRadius: "6px",
+              fontSize: "12px",
+              fontWeight: 600,
+              border: "none",
+              cursor: "pointer",
+              background: tab === "trial" ? "#27272a" : "transparent",
+              color: tab === "trial" ? "#d0a968" : "#71717a",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <Sparkles size={13} color={tab === "trial" ? "#d0a968" : "#71717a"} /> Free Demo (3 Searches)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTab("admin");
+              setError("");
+            }}
+            style={{
+              padding: "8px 10px",
+              borderRadius: "6px",
+              fontSize: "12px",
+              fontWeight: 600,
+              border: "none",
+              cursor: "pointer",
+              background: tab === "admin" ? "#27272a" : "transparent",
+              color: tab === "admin" ? "#f4f4f5" : "#71717a",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <KeyRound size={13} /> Admin Login
+          </button>
+        </div>
+
         {error && (
           <div className="login-error" style={{ marginBottom: "16px" }}>
             <CircleAlert size={16} />
@@ -219,41 +313,85 @@ function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (user: UserSession) =
           </div>
         )}
 
-        <form className="login-form" onSubmit={handleSubmit}>
-          <label>
-            <span>Account Email / Username</span>
-            <input
-              type="text"
-              placeholder="e.g. aditya or admin@clds.ai"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoFocus
-            />
-          </label>
+        {tab === "trial" ? (
+          <form className="login-form" onSubmit={handleTrialSubmit}>
+            <div
+              style={{
+                background: "rgba(208, 169, 104, 0.08)",
+                border: "1px solid rgba(208, 169, 104, 0.2)",
+                borderRadius: "8px",
+                padding: "12px 14px",
+                fontSize: "12px",
+                color: "#d4d4d8",
+                lineHeight: 1.5,
+              }}
+            >
+              <strong style={{ color: "#d0a968", display: "block", marginBottom: "4px" }}>
+                👋 Peerlist Community Preview:
+              </strong>
+              Try out live business discovery & 7-point technical website audits. Get 3 full discovery searches with zero password or card required.
+            </div>
 
-          <label>
-            <span>Password</span>
-            <input
-              type="password"
-              placeholder="Enter your workspace password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </label>
+            <label>
+              <span>Work or Personal Email</span>
+              <input
+                type="email"
+                placeholder="e.g. name@company.com or gmail.com"
+                value={trialEmail}
+                onChange={(e) => setTrialEmail(e.target.value)}
+                required
+                autoFocus
+              />
+            </label>
 
-          <button
-            type="submit"
-            className="primary-button"
-            disabled={loading}
-            style={{ width: "100%", height: "42px", justifyContent: "center", marginTop: "8px" }}
-          >
-            {loading ? "Signing in..." : "Sign In to Workspace"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={loading}
+              style={{ width: "100%", height: "42px", justifyContent: "center", marginTop: "4px" }}
+            >
+              <Sparkles size={16} />
+              {loading ? "Starting Demo..." : "Start 3 Free Searches →"}
+            </button>
+          </form>
+        ) : (
+          <form className="login-form" onSubmit={handleAdminSubmit}>
+            <label>
+              <span>Administrator Email / Username</span>
+              <input
+                type="text"
+                placeholder="e.g. aditya or adityakatyal45678@gmail.com"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                required
+                autoFocus
+              />
+            </label>
 
-        <div className="login-footer-hint">
+            <label>
+              <span>Workspace Password</span>
+              <input
+                type="password"
+                placeholder="Enter your workspace password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                required
+              />
+            </label>
+
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={loading}
+              style={{ width: "100%", height: "42px", justifyContent: "center", marginTop: "4px" }}
+            >
+              <KeyRound size={16} />
+              {loading ? "Verifying..." : "Sign In to Workspace"}
+            </button>
+          </form>
+        )}
+
+        <div className="login-footer-hint" style={{ marginTop: "20px" }}>
           <span>Protected Workspace Access · MongoDB Atlas Synchronized</span>
         </div>
       </div>
@@ -353,7 +491,7 @@ function Sidebar({
           </div>
           <div className="system-row">
             <Globe2 />
-            <span>Python CLDS Engine</span>
+            <span>TypeScript Native Engine</span>
             <CheckCircle2 />
           </div>
 
@@ -374,7 +512,9 @@ function Sidebar({
               </div>
               <div>
                 <strong>{user?.name || "Aditya Katyal"}</strong>
-                <span>{user?.role || "Administrator"}</span>
+                <span style={{ color: user?.is_trial ? "#d0a968" : "#7dbb8c", fontWeight: user?.is_trial ? 600 : 400 }}>
+                  {user?.is_trial ? `Trial (${user.searches_remaining ?? 3}/3 left)` : (user?.role || "Administrator")}
+                </span>
               </div>
               <MoreHorizontal />
             </div>
@@ -1357,9 +1497,13 @@ function LeadDetail({
 function Discover({
   onNavigate,
   onJobStarted,
+  user,
+  onSearchCompleted,
 }: {
   onNavigate: (item: string) => void;
   onJobStarted: (jobId: string) => void;
+  user?: UserSession | null;
+  onSearchCompleted?: (searchesRemaining: number) => void;
 }) {
   const [category, setCategory] = useState("wedding planners");
   const [country, setCountry] = useState("US");
@@ -1371,8 +1515,15 @@ function Discover({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  const isTrialExhausted = Boolean(user?.is_trial && (user?.searches_remaining ?? 3) <= 0);
+
   const handleStart = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isTrialExhausted) {
+      setErrorMsg("You have completed all 3 free trial searches! Reach out to Aditya on Peerlist for full access.");
+      return;
+    }
+
     setLoading(true);
     setErrorMsg("");
     try {
@@ -1386,8 +1537,11 @@ function Discover({
         setStarted(true);
         setLastJobId(data.job_id);
         onJobStarted(data.job_id);
+        if (data.searches_remaining !== undefined && data.searches_remaining !== null && onSearchCompleted) {
+          onSearchCompleted(data.searches_remaining);
+        }
       } else {
-        setErrorMsg(data.error || JSON.stringify(data.details));
+        setErrorMsg(data.message || data.error || JSON.stringify(data.details));
       }
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -1417,6 +1571,58 @@ function Discover({
             </p>
           </div>
         </div>
+
+        {user?.is_trial && (
+          <div
+            style={{
+              margin: "0 24px 20px 24px",
+              padding: "12px 16px",
+              background: isTrialExhausted ? "rgba(220, 38, 38, 0.1)" : "rgba(208, 169, 104, 0.08)",
+              border: `1px solid ${isTrialExhausted ? "rgba(220, 38, 38, 0.3)" : "rgba(208, 169, 104, 0.25)"}`,
+              borderRadius: "8px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "12px",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  color: isTrialExhausted ? "#f87171" : "#d0a968",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <Sparkles size={15} />
+                {isTrialExhausted ? "Free Trial Completed (3/3 Used)" : "Peerlist Community Trial"}
+              </div>
+              <div style={{ fontSize: "12px", color: "#a1a1aa", marginTop: "3px" }}>
+                {isTrialExhausted
+                  ? "You've completed your 3 free discovery runs. Contact Aditya on Peerlist to get full access or buy the codebase!"
+                  : `You have ${user.searches_remaining ?? 3} of 3 free searches remaining. Pick any category and location to run a live test.`}
+              </div>
+            </div>
+            <span
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                background: "#18181b",
+                color: isTrialExhausted ? "#f87171" : "#d0a968",
+                padding: "4px 10px",
+                borderRadius: "12px",
+                border: "1px solid #27272a",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {user.searches_remaining ?? 3}/3 Left
+            </span>
+          </div>
+        )}
+
         <form onSubmit={handleStart}>
           <div className="form-grid">
             <label>
@@ -1473,10 +1679,10 @@ function Discover({
           )}
           <div className="form-footer">
             <span>
-              <Clock3 /> Typical discovery takes 5–20 seconds via Python Subprocess
+              <Clock3 /> Typical discovery takes 3–10 seconds via TypeScript Native Engine
             </span>
-            <button className="primary-button" type="submit" disabled={loading}>
-              <Play /> {loading ? "Queueing..." : "Start discovery"}
+            <button className="primary-button" type="submit" disabled={loading || isTrialExhausted}>
+              <Play /> {loading ? "Queueing..." : isTrialExhausted ? "Trial Limit Reached" : "Start discovery"}
             </button>
           </div>
         </form>
@@ -2337,6 +2543,18 @@ export default function Page() {
           setActiveJobId(jobId);
           fetchJobs();
         }}
+        user={user}
+        onSearchCompleted={(remaining) => {
+          setUser((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  searches_remaining: remaining,
+                  searches_used: (prev.searches_used || 0) + 1,
+                }
+              : null
+          );
+        }}
       />
     );
   } else if (active === "Verification Jobs") {
@@ -2394,6 +2612,48 @@ export default function Page() {
               <span>Search workspace</span>
               <kbd>⌘ K</kbd>
             </div>
+
+            {/* Trial Quota or Admin Badge */}
+            {user?.is_trial ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  background: "#1c1917",
+                  border: "1px solid rgba(208, 169, 104, 0.4)",
+                  padding: "4px 10px",
+                  borderRadius: "14px",
+                  fontSize: "11px",
+                  color: "#d0a968",
+                  fontWeight: 600,
+                }}
+                title="Peerlist Free Trial Account"
+              >
+                <Sparkles size={12} color="#d0a968" />
+                <span>Trial: {user.searches_remaining ?? 3}/3 left</span>
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  background: "rgba(125, 187, 140, 0.12)",
+                  border: "1px solid rgba(125, 187, 140, 0.3)",
+                  padding: "4px 10px",
+                  borderRadius: "14px",
+                  fontSize: "11px",
+                  color: "#7dbb8c",
+                  fontWeight: 600,
+                }}
+                title="Administrator Profile (Unlimited Access)"
+              >
+                <ShieldCheck size={12} color="#7dbb8c" />
+                <span>👑 Unlimited Admin</span>
+              </div>
+            )}
+
             <button
               className="icon-button"
               onClick={() => {
