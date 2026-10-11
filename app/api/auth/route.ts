@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
         const response = NextResponse.json({
           success: true,
           user,
-          message: "Authentication successful (Verified via MongoDB Atlas)",
+          message: "Authentication successful",
         });
 
         // Set secure session cookie for 30 days

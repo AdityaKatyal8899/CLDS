@@ -60,6 +60,7 @@ describe("TypeScript Engine: Normalization & Blacklist", () => {
         website: "https://apexauto.com",
         website_status: "website_found",
         source: "osm",
+        discovered_at: new Date().toISOString(),
       },
       {
         place_id: "p2",
@@ -71,6 +72,7 @@ describe("TypeScript Engine: Normalization & Blacklist", () => {
         website: "https://apexauto.com",
         website_status: "website_found",
         source: "web_search",
+        discovered_at: new Date().toISOString(),
       },
       {
         place_id: "p3",
@@ -82,6 +84,7 @@ describe("TypeScript Engine: Normalization & Blacklist", () => {
         website: "https://uniquebakery.com",
         website_status: "website_found",
         source: "osm",
+        discovered_at: new Date().toISOString(),
       },
     ];
 

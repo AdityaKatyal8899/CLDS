@@ -47,3 +47,4 @@ data/exports/*.json
 Thumbs.db
 
 .vercel
+*.tsbuildinfo

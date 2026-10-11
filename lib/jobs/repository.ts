@@ -55,7 +55,51 @@ export class JobRepository {
     return formatJobDocument(doc);
   }
 
+  static async reconcileStaleJobs(): Promise<void> {
+    try {
+      const col = await this.getCol();
+      const now = new Date().toISOString();
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
+      // 1. Auto-complete jobs that reached 100% progress but were left in "running" status
+      await col.updateMany(
+        { status: "running", progress: 100 },
+        {
+          $set: {
+            status: "completed",
+            completed_at: now,
+            updated_at: now,
+          },
+          $push: { logs: { $each: ["[AUTO-RESOLVED] Job completed successfully at 100% progress."], $slice: -500 } } as any,
+        }
+      );
+
+      // 2. Auto-fail zombie jobs that have been stuck in "running" or "queued" with no updates for > 5 minutes
+      await col.updateMany(
+        {
+          status: { $in: ["running", "queued"] },
+          $or: [
+            { updated_at: { $lt: fiveMinutesAgo } },
+            { updated_at: { $exists: false } },
+          ],
+        },
+        {
+          $set: {
+            status: "failed",
+            error: "Job timed out or worker process was interrupted.",
+            completed_at: now,
+            updated_at: now,
+          },
+          $push: { logs: { $each: ["[SYSTEM] Job marked failed due to inactivity or worker process restart."], $slice: -500 } } as any,
+        }
+      );
+    } catch (err) {
+      console.error("[JobRepository] reconcileStaleJobs error:", err);
+    }
+  }
+
   static async listJobs(limit = 20, status?: JobStatus): Promise<JobResponse[]> {
+    await this.reconcileStaleJobs();
     const col = await this.getCol();
     const query: any = {};
     if (status) query.status = status;

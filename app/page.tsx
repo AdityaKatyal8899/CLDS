@@ -176,6 +176,51 @@ function Status({ value }: { value: string }) {
   );
 }
 
+function formatJobTitle(job: Job): string {
+  if (job.type === "discovery") {
+    let category = "";
+    let city = "";
+    let country = "";
+    let limit = "";
+    if (job.args) {
+      for (let i = 0; i < job.args.length; i++) {
+        if (job.args[i] === "--category" && job.args[i + 1]) category = job.args[i + 1];
+        if (job.args[i] === "--city" && job.args[i + 1]) city = job.args[i + 1];
+        if (job.args[i] === "--country" && job.args[i + 1]) country = job.args[i + 1];
+        if (job.args[i] === "--limit" && job.args[i + 1]) limit = job.args[i + 1];
+      }
+    }
+    const location = [city, country].filter(Boolean).join(", ");
+    if (category && location) {
+      return `Discover ${category} in ${location}${limit ? ` (${limit} leads)` : ""}`;
+    } else if (category) {
+      return `Discover ${category}${limit ? ` (${limit} leads)` : ""}`;
+    }
+    return `Lead Discovery #${job.id.slice(-6)}`;
+  }
+
+  if (job.type === "verification") {
+    let url = "";
+    let limit = "";
+    if (job.args) {
+      for (let i = 0; i < job.args.length; i++) {
+        if (job.args[i] === "--url" && job.args[i + 1]) url = job.args[i + 1];
+        if (job.args[i] === "--limit" && job.args[i + 1]) limit = job.args[i + 1];
+      }
+    }
+    if (url) {
+      const cleanUrl = url.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+      return `Website Audit: ${cleanUrl}`;
+    }
+    if (limit) {
+      return `Batch Verification (${limit} leads)`;
+    }
+    return `Website Verification #${job.id.slice(-6)}`;
+  }
+
+  return `Operation #${job.id.slice(-6)}`;
+}
+
 function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (user: UserSession) => void }) {
   const [tab, setTab] = useState<"trial" | "admin">("trial");
   const [trialEmail, setTrialEmail] = useState("");
@@ -392,7 +437,7 @@ function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (user: UserSession) =
         )}
 
         <div className="login-footer-hint" style={{ marginTop: "20px" }}>
-          <span>Protected Workspace Access · MongoDB Atlas Synchronized</span>
+          <span>Protected Workspace Access · Cloud Synchronized</span>
         </div>
       </div>
     </div>
@@ -481,12 +526,12 @@ function Sidebar({
             <span>System status</span>
             <span className="live-pill">
               <i />
-              Atlas Connected
+              Database Online
             </span>
           </div>
           <div className="system-row">
             <Database />
-            <span>MongoDB Atlas</span>
+            <span>Workspace Database</span>
             <CheckCircle2 />
           </div>
           <div className="system-row">
@@ -652,7 +697,7 @@ function Dashboard({
         <Metric
           label="Total Leads"
           value={leads.length.toString()}
-          detail={`${leads.length} stored in Atlas`}
+          detail={`${leads.length} in workspace`}
           icon={BriefcaseBusiness}
         />
         <Metric
@@ -783,7 +828,7 @@ function Dashboard({
                     <div className="job-main">
                       <strong>{job.type === "discovery" ? "Lead discovery" : "Website verification"}</strong>
                       <span>
-                        {job.args?.join(" ") || `Job #${job.id.slice(-6)}`}
+                        {formatJobTitle(job)}
                       </span>
                     </div>
                     <div className="job-progress">
@@ -839,7 +884,7 @@ function Dashboard({
             </span>
             <span>
               <strong>Explore all leads</strong>
-              <small>Search and filter your MongoDB database</small>
+              <small>Search and filter your workspace leads</small>
             </span>
             <ArrowUpRight />
           </button>
@@ -850,7 +895,7 @@ function Dashboard({
         <div className="panel-heading">
           <div>
             <h2>Recently discovered leads</h2>
-            <p>Latest businesses saved to MongoDB Atlas with live performance data</p>
+            <p>Latest businesses saved to your workspace with live performance data</p>
           </div>
           <button className="text-button" onClick={() => onNavigate("Lead Explorer")}>
             Explore leads <ArrowUpRight />
@@ -1091,7 +1136,7 @@ function Explorer({
         <div>
           <p className="eyebrow">Workspace / Leads</p>
           <h1>Lead Explorer</h1>
-          <p className="subtitle">{leads.length} businesses in your MongoDB Atlas database with real-time audit data</p>
+          <p className="subtitle">{leads.length} businesses in your workspace with real-time audit data</p>
         </div>
       </div>
       <div className="explorer-toolbar">
@@ -1202,7 +1247,7 @@ function LeadDetail({
         </button>
         <div className="empty">
           <div className="spinner" />
-          <span>Loading lead details from MongoDB Atlas...</span>
+          <span>Loading lead details...</span>
         </div>
       </div>
     );
@@ -1394,7 +1439,7 @@ function LeadDetail({
             <div className="panel-heading">
               <div>
                 <h2>Business Details</h2>
-                <p>Saved in MongoDB Atlas</p>
+                <p>Saved in Workspace Database</p>
               </div>
             </div>
             <dl>
@@ -1497,25 +1542,51 @@ function LeadDetail({
 function Discover({
   onNavigate,
   onJobStarted,
+  onSelectLead,
+  onTriggerVerification,
   user,
   onSearchCompleted,
 }: {
   onNavigate: (item: string) => void;
   onJobStarted: (jobId: string) => void;
+  onSelectLead?: (id: string) => void;
+  onTriggerVerification?: (url?: string, leadId?: string) => void;
   user?: UserSession | null;
   onSearchCompleted?: (searchesRemaining: number) => void;
 }) {
-  const [category, setCategory] = useState("wedding planners");
+  const [category, setCategory] = useState("dentist");
   const [country, setCountry] = useState("US");
   const [city, setCity] = useState("Austin");
   const [provider, setProvider] = useState("auto");
   const [limit, setLimit] = useState(10);
-  const [started, setStarted] = useState(false);
-  const [lastJobId, setLastJobId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+
+  // Search execution states
+  const [searchStatus, setSearchStatus] = useState<"idle" | "running" | "completed" | "error">("idle");
+  const [progress, setProgress] = useState(0);
+  const [currentLog, setCurrentLog] = useState("");
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [summary, setSummary] = useState<any>(null);
+  const [discoveredLeads, setDiscoveredLeads] = useState<Lead[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
 
+  const pollIntervalRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, []);
+
   const isTrialExhausted = Boolean(user?.is_trial && (user?.searches_remaining ?? 3) <= 0);
+
+  const presets = [
+    { label: "🦷 Dentists", cat: "dentist" },
+    { label: "🔧 Plumbers", cat: "plumber" },
+    { label: "☕ Bakeries & Cafes", cat: "bakery" },
+    { label: "⚖️ Law Firms", cat: "lawyer" },
+    { label: "💍 Wedding Planners", cat: "wedding planner" },
+    { label: "🚗 Auto Repair", cat: "auto repair" },
+  ];
 
   const handleStart = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1524,8 +1595,13 @@ function Discover({
       return;
     }
 
-    setLoading(true);
+    setSearchStatus("running");
+    setProgress(20);
+    setCurrentLog(`Initializing Stage 1 discovery for "${category}" in ${city}, ${country}...`);
     setErrorMsg("");
+    setDiscoveredLeads([]);
+    setSummary(null);
+
     try {
       const res = await fetch("/api/search", {
         method: "POST",
@@ -1533,172 +1609,475 @@ function Discover({
         body: JSON.stringify({ category, country, city, limit: Number(limit), provider }),
       });
       const data = await res.json();
-      if (res.ok) {
-        setStarted(true);
-        setLastJobId(data.job_id);
-        onJobStarted(data.job_id);
-        if (data.searches_remaining !== undefined && data.searches_remaining !== null && onSearchCompleted) {
-          onSearchCompleted(data.searches_remaining);
-        }
-      } else {
-        setErrorMsg(data.message || data.error || JSON.stringify(data.details));
+
+      if (!res.ok) {
+        setSearchStatus("error");
+        setErrorMsg(data.message || data.error || "Search job could not be queued.");
+        return;
       }
+
+      const jobId = data.job_id;
+      setActiveJobId(jobId);
+      onJobStarted(jobId);
+
+      if (data.searches_remaining !== undefined && data.searches_remaining !== null && onSearchCompleted) {
+        onSearchCompleted(data.searches_remaining);
+      }
+
+      // Start active poll to track progress in real time
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+
+      let pollCount = 0;
+      pollIntervalRef.current = setInterval(async () => {
+        pollCount++;
+        try {
+          const jobRes = await fetch(`/api/jobs/${jobId}`);
+          if (!jobRes.ok) return;
+          const jobData = await jobRes.json();
+
+          if (jobData.progress) {
+            setProgress(Math.max(25, jobData.progress));
+          } else {
+            setProgress((prev) => Math.min(90, prev + 10));
+          }
+
+          if (jobData.logs && jobData.logs.length > 0) {
+            setCurrentLog(jobData.logs[jobData.logs.length - 1]);
+          }
+
+          if (jobData.status === "completed") {
+            clearInterval(pollIntervalRef.current);
+            setProgress(100);
+            setSummary(jobData.result || null);
+
+            // Fetch newly discovered leads
+            try {
+              const leadsRes = await fetch(`/api/leads?city=${encodeURIComponent(city)}&limit=${limit}`);
+              const leadsJson = await leadsRes.json();
+              setDiscoveredLeads(leadsJson.leads || []);
+            } catch {}
+
+            setSearchStatus("completed");
+          } else if (jobData.status === "failed") {
+            clearInterval(pollIntervalRef.current);
+            setSearchStatus("error");
+            setErrorMsg(jobData.error || "Search execution failed.");
+          }
+
+          // Safety timeout after 45 seconds
+          if (pollCount > 45) {
+            clearInterval(pollIntervalRef.current);
+            if (searchStatus === "running") {
+              setSearchStatus("completed");
+            }
+          }
+        } catch {
+          // ignore transient poll errors
+        }
+      }, 900);
     } catch (err: any) {
-      setErrorMsg(err.message);
-    } finally {
-      setLoading(false);
+      setSearchStatus("error");
+      setErrorMsg(err.message || "Failed to trigger search");
     }
+  };
+
+  const handleReset = () => {
+    setSearchStatus("idle");
+    setProgress(0);
+    setCurrentLog("");
+    setErrorMsg("");
   };
 
   return (
     <div className="content-wrap narrow">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Workspace / Discovery</p>
-          <h1>Discover leads</h1>
-          <p className="subtitle">Find real businesses matching category and location at $0 cost.</p>
+          <p className="eyebrow">Real-Time Intelligence</p>
+          <h1>Discover Business Leads</h1>
+          <p className="subtitle">Instant $0-cost business discovery and automatic website classification.</p>
         </div>
       </div>
-      <section className="panel discovery-panel">
-        <div className="discovery-intro">
-          <div className="action-icon large">
-            <Sparkles />
-          </div>
-          <div>
-            <h2>Start a new discovery</h2>
-            <p>
-              Query OpenStreetMap & public web search for real business leads. Results are deduplicated and saved directly to MongoDB Atlas.
-            </p>
-          </div>
-        </div>
 
-        {user?.is_trial && (
-          <div
-            style={{
-              margin: "0 24px 20px 24px",
-              padding: "12px 16px",
-              background: isTrialExhausted ? "rgba(220, 38, 38, 0.1)" : "rgba(208, 169, 104, 0.08)",
-              border: `1px solid ${isTrialExhausted ? "rgba(220, 38, 38, 0.3)" : "rgba(208, 169, 104, 0.25)"}`,
-              borderRadius: "8px",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "12px",
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  color: isTrialExhausted ? "#f87171" : "#d0a968",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <Sparkles size={15} />
-                {isTrialExhausted ? "Free Trial Completed (3/3 Used)" : "Peerlist Community Trial"}
-              </div>
-              <div style={{ fontSize: "12px", color: "#a1a1aa", marginTop: "3px" }}>
-                {isTrialExhausted
-                  ? "You've completed your 3 free discovery runs. Contact Aditya on Peerlist to get full access or buy the codebase!"
-                  : `You have ${user.searches_remaining ?? 3} of 3 free searches remaining. Pick any category and location to run a live test.`}
-              </div>
-            </div>
-            <span
+      {user?.is_trial && (
+        <div
+          style={{
+            marginBottom: "20px",
+            padding: "12px 16px",
+            background: isTrialExhausted ? "rgba(220, 38, 38, 0.1)" : "rgba(208, 169, 104, 0.08)",
+            border: `1px solid ${isTrialExhausted ? "rgba(220, 38, 38, 0.3)" : "rgba(208, 169, 104, 0.25)"}`,
+            borderRadius: "8px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "12px",
+          }}
+        >
+          <div>
+            <div
               style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                background: "#18181b",
+                fontSize: "13px",
+                fontWeight: 600,
                 color: isTrialExhausted ? "#f87171" : "#d0a968",
-                padding: "4px 10px",
-                borderRadius: "12px",
-                border: "1px solid #27272a",
-                whiteSpace: "nowrap",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
               }}
             >
-              {user.searches_remaining ?? 3}/3 Left
-            </span>
+              <Sparkles size={15} />
+              {isTrialExhausted ? "Free Trial Completed (3/3 Used)" : "Peerlist Community Trial"}
+            </div>
+            <div style={{ fontSize: "12px", color: "#a1a1aa", marginTop: "3px" }}>
+              {isTrialExhausted
+                ? "You've completed your 3 free discovery runs. Contact Aditya on Peerlist to get full access or buy the codebase!"
+                : `You have ${user.searches_remaining ?? 3} of 3 free searches remaining. Pick any category and location to run a live test.`}
+            </div>
           </div>
-        )}
+          <span
+            style={{
+              fontSize: "11px",
+              fontWeight: 700,
+              background: "#18181b",
+              color: isTrialExhausted ? "#f87171" : "#d0a968",
+              padding: "4px 10px",
+              borderRadius: "12px",
+              border: "1px solid #27272a",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {user.searches_remaining ?? 3}/3 Left
+          </span>
+        </div>
+      )}
 
-        <form onSubmit={handleStart}>
-          <div className="form-grid">
-            <label>
-              Business category
-              <input
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="e.g. wedding planners, salons, plumbers"
-                required
+      {/* 1. Live Searching Progress State */}
+      {searchStatus === "running" && (
+        <section className="panel" style={{ padding: "28px", marginBottom: "24px" }}>
+          <div style={{ textAlign: "center", maxWidth: "480px", margin: "0 auto" }}>
+            <div className="spinner" style={{ width: "32px", height: "32px", margin: "0 auto 16px" }} />
+            <h2 style={{ fontSize: "18px", margin: "0 0 6px", color: "#f4f4f5" }}>
+              Discovering {category} in {city}...
+            </h2>
+            <p style={{ fontSize: "13px", color: "#a1a1aa", margin: "0 0 20px" }}>
+              Querying live providers, deduplicating records, and resolving website status.
+            </p>
+
+            {/* Progress Bar */}
+            <div style={{ height: "8px", background: "#27272a", borderRadius: "4px", overflow: "hidden", marginBottom: "12px" }}>
+              <div
+                style={{
+                  height: "100%",
+                  width: `${progress}%`,
+                  background: "linear-gradient(90deg, #d0a968, #7dbb8c)",
+                  borderRadius: "4px",
+                  transition: "width 0.4s ease",
+                }}
               />
-            </label>
-            <label>
-              Country (ISO Code)
-              <select value={country} onChange={(e) => setCountry(e.target.value)}>
-                <option value="US">United States (US)</option>
-                <option value="IN">India (IN)</option>
-                <option value="GB">United Kingdom (GB)</option>
-                <option value="CA">Canada (CA)</option>
-                <option value="AU">Australia (AU)</option>
-              </select>
-            </label>
-            <label>
-              City
-              <input
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="e.g. Austin, London, Delhi, Toronto"
-                required
-              />
-            </label>
-            <label>
-              Discovery Provider
-              <select value={provider} onChange={(e) => setProvider(e.target.value)}>
-                <option value="auto">Auto (OSM + Web Search) [$0 Free]</option>
-                <option value="osm">OpenStreetMap Overpass [$0 Free]</option>
-                <option value="web">Web Search [$0 Free]</option>
-                <option value="google">Google Places (API Key Required)</option>
-              </select>
-            </label>
-            <label>
-              Result limit
-              <select value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
-                <option value={5}>5 leads</option>
-                <option value={10}>10 leads</option>
-                <option value={25}>25 leads</option>
-                <option value={50}>50 leads</option>
-              </select>
-            </label>
-          </div>
-          {errorMsg && (
-            <div style={{ color: "#d47c7c", marginBottom: "16px", fontSize: "12px" }}>
-              Error: {errorMsg}
             </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#71717a", marginBottom: "16px" }}>
+              <span>Progress: {progress}%</span>
+              <span>Step: Scraping & Normalizing</span>
+            </div>
+
+            {/* Live Log Message */}
+            <div
+              style={{
+                background: "#09090b",
+                border: "1px solid #27272a",
+                borderRadius: "6px",
+                padding: "8px 12px",
+                fontSize: "12px",
+                color: "#d0a968",
+                fontFamily: "monospace",
+                textAlign: "left",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {currentLog || "Connecting to OpenStreetMap and DuckDuckGo engine..."}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 2. Search Completed State with Immediate Results */}
+      {searchStatus === "completed" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px", marginBottom: "24px" }}>
+          {/* Success Banner */}
+          <section className="panel" style={{ padding: "24px", border: "1px solid #314237", background: "#0c150e" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#7dbb8c", fontWeight: 600, fontSize: "16px" }}>
+                  <CheckCircle2 size={20} />
+                  Discovery Complete! Found {summary?.unique_discovered || discoveredLeads.length} Leads
+                </div>
+                <p style={{ fontSize: "13px", color: "#a1a1aa", margin: "6px 0 0" }}>
+                  Successfully stored and deduplicated in workspace database for <strong>"{category}"</strong> in <strong>{city}, {country}</strong>.
+                </p>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleReset}
+                  style={{ height: "36px", padding: "0 14px", fontSize: "12px" }}
+                >
+                  <Search size={14} /> New Search
+                </button>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => onNavigate("Lead Explorer")}
+                  style={{ height: "36px", padding: "0 14px", fontSize: "12px" }}
+                >
+                  <ArrowUpRight size={14} /> View All in Explorer
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Metrics Bar */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "12px", marginTop: "18px" }}>
+              <div style={{ background: "#151518", border: "1px solid #27272a", borderRadius: "6px", padding: "10px 12px" }}>
+                <div style={{ fontSize: "11px", color: "#a1a1aa" }}>Total Discovered</div>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "#f4f4f5" }}>
+                  {summary?.unique_discovered || discoveredLeads.length}
+                </div>
+              </div>
+              <div style={{ background: "#151518", border: "1px solid #27272a", borderRadius: "6px", padding: "10px 12px" }}>
+                <div style={{ fontSize: "11px", color: "#a1a1aa" }}>With Websites</div>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "#7dbb8c" }}>
+                  {summary?.websites_found || discoveredLeads.filter((l) => l.website_status === "website_found").length}
+                </div>
+              </div>
+              <div style={{ background: "#151518", border: "1px solid #27272a", borderRadius: "6px", padding: "10px 12px" }}>
+                <div style={{ fontSize: "11px", color: "#d0a968" }}>No Website (Prime)</div>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "#d0a968" }}>
+                  {summary?.no_website_found || discoveredLeads.filter((l) => l.website_status === "no_website_found").length}
+                </div>
+              </div>
+              <div style={{ background: "#151518", border: "1px solid #27272a", borderRadius: "6px", padding: "10px 12px" }}>
+                <div style={{ fontSize: "11px", color: "#a1a1aa" }}>Duplicates Cleaned</div>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "#a1a1aa" }}>
+                  {summary?.duplicates_removed || 0}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Instant Discovered Leads Preview List */}
+          {discoveredLeads.length > 0 && (
+            <section className="panel" style={{ padding: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                <h3 style={{ fontSize: "15px", margin: 0, color: "#f4f4f5", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <BriefcaseBusiness size={16} color="#d0a968" /> Discovered Businesses ({discoveredLeads.length})
+                </h3>
+                <span style={{ fontSize: "12px", color: "#71717a" }}>Showing fresh results</span>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {discoveredLeads.map((lead) => (
+                  <div
+                    key={lead.place_id || lead._id}
+                    style={{
+                      background: "#121214",
+                      border: "1px solid #27272a",
+                      borderRadius: "8px",
+                      padding: "12px 16px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "14px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ minWidth: "220px", flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                        <strong
+                          style={{ color: "#f4f4f5", fontSize: "14px", cursor: onSelectLead ? "pointer" : "default" }}
+                          onClick={() => onSelectLead && onSelectLead(lead.place_id || lead._id)}
+                        >
+                          {lead.business_name}
+                        </strong>
+                        <Status value={lead.website_status} />
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#a1a1aa", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                        <span>📍 {lead.city || city}, {lead.country || country}</span>
+                        {lead.category && <span>🏷️ {lead.category}</span>}
+                        {lead.phone && (
+                          <a
+                            href={`tel:${lead.phone}`}
+                            style={{ color: "#7dbb8c", textDecoration: "none" }}
+                          >
+                            📞 {lead.phone}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      {lead.website ? (
+                        <>
+                          <a
+                            href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="secondary-button"
+                            style={{ height: "32px", padding: "0 10px", fontSize: "11px", gap: "4px" }}
+                          >
+                            <ExternalLink size={12} /> Visit Site
+                          </a>
+                          {onTriggerVerification && (
+                            <button
+                              type="button"
+                              className="text-button"
+                              onClick={() => onTriggerVerification(lead.website || undefined, lead.place_id)}
+                              style={{ height: "32px", padding: "0 10px", fontSize: "11px", color: "#d0a968", gap: "4px" }}
+                            >
+                              <ShieldCheck size={13} /> Verify
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <span style={{ fontSize: "12px", color: "#d0a968", fontWeight: 500 }}>
+                          No Website (Build Opportunity)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
-          <div className="form-footer">
-            <span>
-              <Clock3 /> Typical discovery takes 3–10 seconds via TypeScript Native Engine
-            </span>
-            <button className="primary-button" type="submit" disabled={loading || isTrialExhausted}>
-              <Play /> {loading ? "Queueing..." : isTrialExhausted ? "Trial Limit Reached" : "Start discovery"}
-            </button>
-          </div>
-        </form>
-        {started && lastJobId && (
-          <div className="started-state">
-            <span className="spinner" />
-            <div>
-              <strong>Discovery job started</strong>
-              <span>Job #{lastJobId} is executing and streaming logs in real time.</span>
+        </div>
+      )}
+
+      {/* 3. Search Form (Visible when idle, error, or starting new search) */}
+      {searchStatus !== "running" && (
+        <section className="panel discovery-panel">
+          <div className="discovery-intro">
+            <div className="action-icon large">
+              <Sparkles />
             </div>
-            <button className="text-button" onClick={() => onNavigate("Verification Jobs")}>
-              View job <ArrowUpRight />
-            </button>
+            <div>
+              <h2>{searchStatus === "completed" ? "Run another discovery" : "Start a new discovery"}</h2>
+              <p>
+                Query OpenStreetMap & public web search for real business leads. Results are deduplicated and saved directly to your workspace database.
+              </p>
+            </div>
           </div>
-        )}
-      </section>
+
+          {/* Quick Category Presets */}
+          <div style={{ padding: "0 24px", marginBottom: "16px" }}>
+            <div style={{ fontSize: "11px", color: "#71717a", fontWeight: 600, textTransform: "uppercase", marginBottom: "8px" }}>
+              Quick Suggestions (Click to fill):
+            </div>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {presets.map((p) => (
+                <button
+                  key={p.cat}
+                  type="button"
+                  onClick={() => setCategory(p.cat)}
+                  style={{
+                    background: category.toLowerCase() === p.cat ? "#27272a" : "#141416",
+                    border: `1px solid ${category.toLowerCase() === p.cat ? "#d0a968" : "#27272a"}`,
+                    color: category.toLowerCase() === p.cat ? "#d0a968" : "#d4d4d8",
+                    padding: "4px 10px",
+                    borderRadius: "14px",
+                    fontSize: "11px",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <form onSubmit={handleStart}>
+            <div className="form-grid">
+              <label>
+                Business category
+                <input
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="e.g. dentist, plumber, wedding planner, salon"
+                  required
+                />
+              </label>
+              <label>
+                Country (ISO Code)
+                <select value={country} onChange={(e) => setCountry(e.target.value)}>
+                  <option value="US">United States (US)</option>
+                  <option value="IN">India (IN)</option>
+                  <option value="GB">United Kingdom (GB)</option>
+                  <option value="CA">Canada (CA)</option>
+                  <option value="AU">Australia (AU)</option>
+                </select>
+              </label>
+              <label>
+                City
+                <input
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="e.g. Austin, London, Delhi, Toronto"
+                  required
+                />
+              </label>
+              <label>
+                Discovery Provider
+                <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+                  <option value="auto">Auto (OSM + Web Search) [$0 Free]</option>
+                  <option value="osm">OpenStreetMap Overpass [$0 Free]</option>
+                  <option value="web">Web Search [$0 Free]</option>
+                  <option value="google">Google Places (API Key Required)</option>
+                </select>
+              </label>
+              <label>
+                Result limit
+                <select value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
+                  <option value={5}>5 leads</option>
+                  <option value={10}>10 leads</option>
+                  <option value={25}>25 leads</option>
+                  <option value={50}>50 leads</option>
+                </select>
+              </label>
+            </div>
+
+            {errorMsg && (
+              <div
+                style={{
+                  color: "#f87171",
+                  background: "#271414",
+                  border: "1px solid #5c2424",
+                  padding: "10px 14px",
+                  borderRadius: "6px",
+                  marginBottom: "16px",
+                  fontSize: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+              >
+                <CircleAlert size={16} />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            <div className="form-footer">
+              <span>
+                <Clock3 /> Typical discovery takes 3–10 seconds via TypeScript Native Engine
+              </span>
+              <button className="primary-button" type="submit" disabled={isTrialExhausted}>
+                <Play /> {isTrialExhausted ? "Trial Limit Reached" : "Find Leads Now"}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
     </div>
   );
 }
@@ -1805,7 +2184,7 @@ function Jobs({
                   </div>
                   <div className="job-main">
                     <strong>{job.type === "discovery" ? "Lead Discovery" : "Website Verification"}</strong>
-                    <span>{job.args?.join(" ") || `Job #${job.id}`}</span>
+                    <span>{formatJobTitle(job)}</span>
                   </div>
                   <div>
                     <Status value={job.status} />
@@ -2265,7 +2644,7 @@ function SettingsView({
               </strong>
             </div>
             <div>
-              <div style={{ fontSize: "11px", color: "#a1a1aa" }}>Stored in Atlas</div>
+              <div style={{ fontSize: "11px", color: "#a1a1aa" }}>Total in Workspace</div>
               <strong style={{ fontSize: "14px", color: "#7dbb8c" }}>{totalLeadsCount} total leads</strong>
             </div>
           </div>
@@ -2322,11 +2701,11 @@ function SettingsView({
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "12px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ color: "#a1a1aa" }}>MongoDB Atlas</span>
+                <span style={{ color: "#a1a1aa" }}>Cloud Database</span>
                 <span style={{ color: "#7dbb8c", fontSize: "11px", fontWeight: 600 }}>● Connected</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ color: "#a1a1aa" }}>Python Subprocess</span>
+                <span style={{ color: "#a1a1aa" }}>Native Engine</span>
                 <span style={{ color: "#7dbb8c", fontSize: "11px", fontWeight: 600 }}>● Ready</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2412,12 +2791,19 @@ export default function Page() {
     if (user) {
       fetchLeads();
       fetchJobs();
-      const interval = setInterval(() => {
-        fetchJobs();
-      }, 5000);
-      return () => clearInterval(interval);
     }
   }, [user]);
+
+  // Only poll if there is an in-progress background job
+  useEffect(() => {
+    const hasActiveJob = jobs.some((j) => j.status === "running" || j.status === "pending");
+    if (!hasActiveJob) return;
+
+    const interval = setInterval(() => {
+      fetchJobs();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [jobs]);
 
   // Listen to Server-Sent Events stream when activeJobId is set
   useEffect(() => {
@@ -2543,6 +2929,8 @@ export default function Page() {
           setActiveJobId(jobId);
           fetchJobs();
         }}
+        onSelectLead={setSelectedLead}
+        onTriggerVerification={handleTriggerVerification}
         user={user}
         onSearchCompleted={(remaining) => {
           setUser((prev) =>
